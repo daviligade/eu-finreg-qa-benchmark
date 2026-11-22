@@ -1,0 +1,110 @@
+# Run configuration. Every script reads this file, and each run stores a copy with its outputs.
+
+version: "0.1.0"
+seed: 13
+
+models:
+  # The judge must come from a different model family than the answerer.
+  answerer:
+    name: "gemma4:31b"
+    family: "gemma"
+    host: "http://localhost:11434"
+    temperature: 0.0
+    num_ctx: 8192
+    timeout_s: 900
+  judge:
+    name: "deepseek-r1:32b"
+    family: "deepseek"
+    host: "http://localhost:11434"
+    temperature: 0.0
+    num_ctx: 16384
+    request_timeout_s: 600
+    timeout_s: 300
+  embed:
+    name: "nomic-embed-text"
+    host: "http://localhost:11434"
+    dim: 768
+
+# Systems under test. Each module exposes build(manifest, corpus) -> Pipeline (see evaluation/harness.py).
+systems:
+  B0:
+    label: "Vanilla RAG (dense-only)"
+    module: "baselines.b0_vanilla"
+    enabled: true
+  B1:
+    label: "Hybrid RAG (no AKN)"
+    module: "baselines.b1_hybrid"
+    enabled: true
+
+corpus:
+  pdfs_dir: "data/pdfs"
+  akn_dir: "data/akn"
+  sources:
+    - id: "MIFID2_L1"
+      pdf: "data/pdfs/CELEX_32014L0065_EN_TXT.pdf"
+      akn: "data/akn/32014L0065.akn"
+    - id: "SFDR_L1"
+      pdf: "data/pdfs/CELEX_32019R2088_EN_TXT.pdf"
+      akn: "data/akn/32019R2088.akn"
+  # Source documents for the real questions. They are not part of the retrieval corpus.
+  esma_qa:
+    - id: "ESMA_QA_INVPROT"
+      url: "https://www.esma.europa.eu/sites/default/files/library/esma35-43-349_mifid_ii_qas_on_investor_protection_topics.pdf"
+      path: "data/pdfs/esma35-43-349_mifid_ii_qas_on_investor_protection_topics.pdf"
+    - id: "ESMA_GL_SUIT"
+      url: "https://www.esma.europa.eu/sites/default/files/2023-04/ESMA35-43-3172_Guidelines_on_certain_aspects_of_the_MiFID_II_suitability_requirements.pdf"
+      path: "data/pdfs/ESMA35-43-3172_Guidelines_on_certain_aspects_of_the_MiFID_II_suitability_requirements.pdf"
+
+dataset:
+  # Sample sizes for the three run modes of the harness (--pilot, --conference, --full).
+  # Real questions are drawn at random with the seed; generated questions are stratified by kind.
+  pilot:
+    n_esma: 10
+    n_synthetic: 20
+  conference:
+    n_esma: 50
+    n_synthetic: 100
+  full:
+    n_esma: 50
+    n_synthetic: 200
+  # Share of each kind in the generated set (sums to 1.0).
+  intent_distribution:
+    FACTUAL_QA: 0.30
+    SUMMARIZATION: 0.12
+    COMPARISON: 0.12
+    LEGAL_ADVICE: 0.08
+    CONVERSATIONAL: 0.04
+    META: 0.04
+    OFF_TOPIC: 0.30
+
+metrics:
+  # Judged by the judge model.
+  ragas:
+    - faithfulness
+    - answer_relevancy
+    - context_precision
+    - context_recall
+    - answer_correctness
+  # Deterministic, no model involved.
+  custom:
+    - CVR           # citation validity rate
+    - APA_article   # article accuracy, article number only
+    - APA_pinpoint  # article accuracy, article + paragraph + point
+    - MIC           # multi-instrument coverage (comparison questions)
+    - RC            # refusal correctness
+    - CD            # citation density
+
+stats:
+  bootstrap:
+    n_iter: 10000
+    method: "BCa"
+    confidence: 0.95
+  alpha: 0.05
+  correction: "bonferroni"
+  noninferiority_margin_pp: 3.0
+
+paths:
+  runs_dir: "runs"
+  pilot_dir: "runs/pilot"
+  full_dir: "runs/full"
+  cache_dir: ".cache"
